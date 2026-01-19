@@ -10,6 +10,7 @@
 
 SysData_t SysData;
 DispState_t DispState;
+Measure_t Measure;
 static char LCD_Cache[10][21];
 
 void Task_Key(void);
@@ -85,19 +86,16 @@ void Key_B4() {
 }
 
 void Task_Pwm() {
-    
-    
-    if(SysData.duty > 100) SysData.duty = SysData.duty - 100;
+    if(SysData.duty > 100) SysData.duty = 0;
     if(SysData.freq > 10000) SysData.freq = 1000;
-    if(SysData.freq == 1000) SysData.freq = 1000;
+    if(SysData.freq == 0) SysData.freq = 1000;
     static uint32_t last_freq = 0;
     static uint32_t last_duty = 0;
     if(SysData.freq != last_freq || SysData.duty != last_duty) {
         PWM_Set_Freq_And_Duty(&htim17, TIM_CHANNEL_1, SysData.freq, SysData.duty);
         last_freq = SysData.freq;
         last_duty = SysData.duty;
-    }
-    
+    } 
 }
 
 void Task_Lcd() {
@@ -115,6 +113,8 @@ void Task_Lcd() {
     LCD_Show(Line2, "abcdefghijklmnopqrst");
     LCD_Show(Line3, "Duty: %d%%         ", SysData.duty);
     LCD_Show(Line4, "Freq: %d Hz        ", SysData.freq);
+    LCD_Show(Line5, "MesDuty: %d%%      ", Measure.duty);
+    LCD_Show(Line6, "MesFreq: %d Hz     ", Measure.freq);
     
     
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
@@ -144,6 +144,19 @@ void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t F
     __HAL_TIM_SetCompare(htim, Channel, crr);
 }
 
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+    if(htim->Instance == TIM2) {
+        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
+            uint32_t period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+            uint32_t pulse_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            if(period_cnt != 0) {
+                Measure.freq = 80000000 / period_cnt;
+                uint32_t low_duty = (pulse_cnt * 100) / period_cnt;
+                Measure.duty = 100 - low_duty;
+            }
+        }
+    }
+}
 
 
 void App_Init() {
@@ -159,7 +172,13 @@ void App_Init() {
     memset(&SysData, 0, sizeof(SysData));
     memset(&DispState, 0, sizeof(DispState));
     
+    SysData.duty = 50;
+    SysData.freq = 1000;
+    
     HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);
+    
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
 }
 
 void App_Loop() {

@@ -18,6 +18,11 @@ typedef struct {
     uint32_t hint_time;
 } SysData_t;
 
+typedef struct {
+    uint32_t freq;
+    uint32_t duty;
+} Measure_t;
+
 void App_Init(void);
 void App_Loop(void);
 
