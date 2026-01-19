@@ -22,6 +22,7 @@ void Key_B3(void);
 void Key_B4(void);
 
 void LCD_Show(uint8_t Line, char *fmt, ...);
+void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent);
 
 void Task_Key() {
     Key_B1();
@@ -77,8 +78,27 @@ void Key_B4() {
         sprintf(SysData.hint_msg, "Count Reset! ");
         SysData.hint_time = HAL_GetTick();
     }
+    if(KeyState[3].SINGLE) {
+        KeyState[3].SINGLE = 0;
+        SysData.freq += 1000;
+    }
 }
 
+void Task_Pwm() {
+    
+    
+    if(SysData.duty > 100) SysData.duty = SysData.duty - 100;
+    if(SysData.freq > 10000) SysData.freq = 1000;
+    if(SysData.freq == 1000) SysData.freq = 1000;
+    static uint32_t last_freq = 0;
+    static uint32_t last_duty = 0;
+    if(SysData.freq != last_freq || SysData.duty != last_duty) {
+        PWM_Set_Freq_And_Duty(&htim17, TIM_CHANNEL_1, SysData.freq, SysData.duty);
+        last_freq = SysData.freq;
+        last_duty = SysData.duty;
+    }
+    
+}
 
 void Task_Lcd() {
     if(SysData.hint_msg[0] != '\0') {
@@ -94,9 +114,12 @@ void Task_Lcd() {
     LCD_Show(Line1, "Count: %-13d", SysData.count);
     LCD_Show(Line2, "abcdefghijklmnopqrst");
     LCD_Show(Line3, "Duty: %d%%         ", SysData.duty);
+    LCD_Show(Line4, "Freq: %d Hz        ", SysData.freq);
+    
     
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
+
 
 void LCD_Show(uint8_t Line, char *fmt, ...) {
     char buf[21];
@@ -113,10 +136,15 @@ void LCD_Show(uint8_t Line, char *fmt, ...) {
     }
 }
 
-void Task_Pwm() {
-    while(SysData.duty > 100) SysData.duty = SysData.duty - 100;
-    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, SysData.duty * 10);
+void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent) {
+    uint32_t clock_freq = 1000000;
+    uint32_t arr = (clock_freq / Freq_Hz) - 1;
+    uint32_t crr = (arr + 1) * Duty_Percent / 100;
+    __HAL_TIM_SetAutoreload(htim, arr);
+    __HAL_TIM_SetCompare(htim, Channel, crr);
 }
+
+
 
 void App_Init() {
     HAL_Delay(50);

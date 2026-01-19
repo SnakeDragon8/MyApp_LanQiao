@@ -11,7 +11,8 @@ typedef enum {
 
 typedef struct {
     uint32_t count;
-    uint8_t duty;
+    uint32_t freq;
+    uint32_t duty;
     
     char hint_msg[21];
     uint32_t hint_time;
