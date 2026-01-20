@@ -12,6 +12,7 @@ SysData_t SysData;
 DispState_t DispState;
 Measure_t Measure;
 static char LCD_Cache[10][21];
+volatile static uint8_t run_led = 0x01;
 
 void Task_Key(void);
 void Task_Lcd(void);
@@ -158,6 +159,13 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
     }
 }
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if(htim->Instance == TIM4) {
+        LED_Disp(run_led);
+        run_led = run_led << 1;
+        if(run_led == 0) run_led = 0x01;
+    }
+}
 
 void App_Init() {
     HAL_Delay(50);
@@ -179,6 +187,8 @@ void App_Init() {
     
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
+    
+    HAL_TIM_Base_Start_IT(&htim4);
 }
 
 void App_Loop() {
