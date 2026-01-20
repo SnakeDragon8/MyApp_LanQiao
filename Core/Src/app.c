@@ -15,6 +15,13 @@ Measure_t Measure;
 static char LCD_Cache[10][21];
 volatile static uint8_t run_led = 0x01;
 
+// UART-Test
+uint8_t rx_data;
+char rx_buf[50];
+uint8_t rx_cnt = 0;
+uint8_t rx_flag = 0;
+void Task_Uart(void);
+
 void Task_Key(void);
 void Task_Lcd(void);
 void Task_Pwm(void);
@@ -168,6 +175,30 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     }
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if(huart->Instance == USART1) {
+        rx_buf[rx_cnt++] = rx_data;
+        if(rx_data == '\n') {   // 检测到换行符\n才结束
+            rx_flag = 1;
+        }
+        if(rx_cnt >= 50) rx_cnt = 0;
+        HAL_UART_Receive_IT(huart, &rx_data, 1);
+    }
+}
+
+void Task_Uart() {
+    if(rx_flag == 1) {
+        rx_cnt -= 2;    // 去除末尾的\r\n
+        rx_buf[rx_cnt] = '\0';
+        strcpy(SysData.hint_msg, rx_buf);
+        SysData.hint_time = HAL_GetTick();
+        memset(rx_buf, 0, 50);
+        rx_cnt = 0;
+        rx_flag = 0;
+    }
+    
+}
+
 void App_Init() {
     HAL_Delay(50);
     LED_Disp(0x00);
@@ -192,12 +223,15 @@ void App_Init() {
     HAL_TIM_Base_Start_IT(&htim4);
     
     printf("Hello World\r\n");
+    
+    HAL_UART_Receive_IT(&huart1, &rx_data, 1);
 }
 
 void App_Loop() {
     Task_Key();
     Task_Lcd();
     Task_Pwm();
+    Task_Uart();
 }
 
 int fputc(int ch, FILE *f) {
