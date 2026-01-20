@@ -3,6 +3,7 @@
 #include "lcd.h"
 #include "led.h"
 #include "tim.h"
+#include "usart.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -189,10 +190,17 @@ void App_Init() {
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
     
     HAL_TIM_Base_Start_IT(&htim4);
+    
+    printf("Hello World\r\n");
 }
 
 void App_Loop() {
     Task_Key();
     Task_Lcd();
     Task_Pwm();
+}
+
+int fputc(int ch, FILE *f) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
+    return ch;
 }
