@@ -9,6 +9,8 @@
 #include <string.h>
 #include <stdarg.h>
 
+#include "chinese.h"
+
 SysData_t SysData;
 DispState_t DispState;
 volatile Measure_t Measure;
@@ -124,6 +126,8 @@ void Task_Lcd() {
     LCD_Show(Line5, "MesDuty: %d%%      ", Measure.duty);
     LCD_Show(Line6, "MesFreq: %d Hz     ", Measure.freq);
     
+    LCD_Show_Chinese(Line7, 320, White, Black);
+    
     
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
@@ -163,6 +167,8 @@ void App_Init() {
     printf("Hello World\r\n");
     
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buf, RX_BUF_SIZE);
+    
+    
 }
 
 void App_Loop() {
