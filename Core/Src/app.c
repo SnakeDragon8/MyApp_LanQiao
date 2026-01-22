@@ -11,20 +11,19 @@
 
 SysData_t SysData;
 DispState_t DispState;
-Measure_t Measure;
+volatile Measure_t Measure;
+
+uint8_t rx_buf[RX_BUF_SIZE];
+char process_buf[RX_BUF_SIZE];
+uint8_t process_flag = 0;
+
 static char LCD_Cache[10][21];
 volatile static uint8_t run_led = 0x01;
-
-// UART-Test
-uint8_t rx_data;
-char rx_buf[50];
-uint8_t rx_cnt = 0;
-uint8_t rx_flag = 0;
-void Task_Uart(void);
 
 void Task_Key(void);
 void Task_Lcd(void);
 void Task_Pwm(void);
+void Task_Uart(void);
 
 void Key_B1(void);
 void Key_B2(void);
@@ -129,74 +128,13 @@ void Task_Lcd() {
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
 
-
-void LCD_Show(uint8_t Line, char *fmt, ...) {
-    char buf[21];
-    va_list ap;
-    uint8_t line_idx = Line / 24;
-    
-    va_start(ap, fmt);
-    vsnprintf(buf, 21, fmt, ap);
-    va_end(ap);
-    
-    if(strcmp(LCD_Cache[line_idx], buf) != 0) {
-        LCD_DisplayStringLine(Line, (uint8_t *)buf);
-        strcpy(LCD_Cache[line_idx], buf);
-    }
-}
-
-void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent) {
-    uint32_t clock_freq = 1000000;
-    uint32_t arr = (clock_freq / Freq_Hz) - 1;
-    uint32_t crr = (arr + 1) * Duty_Percent / 100;
-    __HAL_TIM_SetAutoreload(htim, arr);
-    __HAL_TIM_SetCompare(htim, Channel, crr);
-}
-
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
-    if(htim->Instance == TIM2) {
-        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
-            uint32_t period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
-            uint32_t pulse_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            if(period_cnt != 0) {
-                Measure.freq = 80000000 / period_cnt;
-                uint32_t low_duty = (pulse_cnt * 100) / period_cnt;
-                Measure.duty = 100 - low_duty;
-            }
-        }
-    }
-}
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if(htim->Instance == TIM4) {
-        LED_Disp(run_led);
-        run_led = run_led << 1;
-        if(run_led == 0) run_led = 0x01;
-    }
-}
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if(huart->Instance == USART1) {
-        rx_buf[rx_cnt++] = rx_data;
-        if(rx_data == '\n') {   // 检测到换行符\n才结束
-            rx_flag = 1;
-        }
-        if(rx_cnt >= 50) rx_cnt = 0;
-        HAL_UART_Receive_IT(huart, &rx_data, 1);
-    }
-}
-
 void Task_Uart() {
-    if(rx_flag == 1) {
-        rx_cnt -= 2;    // 去除末尾的\r\n
-        rx_buf[rx_cnt] = '\0';
-        strcpy(SysData.hint_msg, rx_buf);
+    if(process_flag == 1) {
+        strcpy(SysData.hint_msg, process_buf);
         SysData.hint_time = HAL_GetTick();
         memset(rx_buf, 0, 50);
-        rx_cnt = 0;
-        rx_flag = 0;
+        process_flag = 0;
     }
-    
 }
 
 void App_Init() {
@@ -224,7 +162,7 @@ void App_Init() {
     
     printf("Hello World\r\n");
     
-    HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buf, RX_BUF_SIZE);
 }
 
 void App_Loop() {
@@ -234,7 +172,65 @@ void App_Loop() {
     Task_Uart();
 }
 
+// 重定向printf
 int fputc(int ch, FILE *f) {
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
     return ch;
+}
+
+void LCD_Show(uint8_t Line, char *fmt, ...) {
+    char buf[21];
+    va_list ap;
+    uint8_t line_idx = Line / 24;
+    
+    va_start(ap, fmt);
+    vsnprintf(buf, 21, fmt, ap);
+    va_end(ap);
+    
+    if(strcmp(LCD_Cache[line_idx], buf) != 0) {
+        LCD_DisplayStringLine(Line, (uint8_t *)buf);
+        strcpy(LCD_Cache[line_idx], buf);
+    }
+}
+
+void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent) {
+    uint32_t clock_freq = 1000000;
+    uint32_t arr = (clock_freq / Freq_Hz) - 1;
+    uint32_t crr = (arr + 1) * Duty_Percent / 100;
+    __HAL_TIM_SetAutoreload(htim, arr);
+    __HAL_TIM_SetCompare(htim, Channel, crr);
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+    // 定时器输入捕获回调函数
+    if(htim->Instance == TIM2) {
+        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
+            uint32_t period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+            uint32_t pulse_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            if(period_cnt != 0) {
+                Measure.freq = 80000000 / period_cnt;
+                uint32_t low_duty = (pulse_cnt * 100) / period_cnt;
+                Measure.duty = 100 - low_duty;
+            }
+        }
+    }
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    // 定时器周期溢出回调函数（更新中断回调）
+    if(htim->Instance == TIM4) {
+        LED_Disp(run_led);
+        run_led = run_led << 1;
+        if(run_led == 0) run_led = 0x01;
+    }
+}
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+    // 接收事件回调函数
+    if(huart->Instance == USART1) {
+        memcpy(process_buf, rx_buf, Size);
+        process_buf[Size] = '\0';
+        process_flag = 1;
+        HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_buf, RX_BUF_SIZE);
+    }
 }
