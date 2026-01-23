@@ -125,18 +125,16 @@ void Task_Lcd() {
     LCD_Show(Line4, "Freq: %d Hz        ", SysData.freq);
     LCD_Show(Line5, "MesDuty: %d%%      ", Measure.duty);
     LCD_Show(Line6, "MesFreq: %d Hz     ", Measure.freq);
-    
-    LCD_Show_Chinese(Line7, 320, White, Black);
-    
-    
+
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
 
 void Task_Uart() {
     if(process_flag == 1) {
-        strcpy(SysData.hint_msg, process_buf);
+        strncpy(SysData.hint_msg, process_buf, sizeof(SysData.hint_msg) - 1);
+        SysData.hint_msg[sizeof(SysData.hint_msg) - 1] = '\0';
         SysData.hint_time = HAL_GetTick();
-        memset(rx_buf, 0, 50);
+        memset(rx_buf, 0, RX_BUF_SIZE);
         process_flag = 0;
     }
 }
@@ -167,8 +165,9 @@ void App_Init() {
     printf("Hello World\r\n");
     
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buf, RX_BUF_SIZE);
+    __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);
     
-    
+    LCD_Show_Chinese(Line7, 320, White, Black);
 }
 
 void App_Loop() {
@@ -238,5 +237,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
         process_buf[Size] = '\0';
         process_flag = 1;
         HAL_UARTEx_ReceiveToIdle_DMA(huart, rx_buf, RX_BUF_SIZE);
+        __HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
     }
 }
