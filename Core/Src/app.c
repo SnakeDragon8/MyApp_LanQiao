@@ -124,7 +124,6 @@ void Task_Lcd() {
     LCD_Show(Line2, "PA7Freq: %dHz      ", SysData.freq);
     LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
     LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
-    LCD_Show(Line5, "PA15Duty: %.1f%%   ", Measure.pa15_duty);
 
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
@@ -159,7 +158,6 @@ void App_Init() {
     
     HAL_TIM_IC_Start_IT(&htim16, TIM_CHANNEL_1);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
-    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
     
     HAL_TIM_Base_Start_IT(&htim4);
     
@@ -213,10 +211,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
     if(htim->Instance == TIM2) {
         if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
             uint32_t pa15_period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            uint32_t pa15_high_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+            __HAL_TIM_SET_COUNTER(htim, 0);
             if(pa15_period_cnt != 0) {
                 Measure.pa15_freq = 1000000.0 / pa15_period_cnt;
-                Measure.pa15_duty = ((float)pa15_high_cnt / pa15_period_cnt) * 100.0f;
             }
         }
     }

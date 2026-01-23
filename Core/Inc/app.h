@@ -23,7 +23,6 @@ typedef struct {
 typedef struct {
     uint32_t pa6_freq;
     float pa15_freq;
-    float pa15_duty;
 } Measure_t;
 
 void App_Init(void);
