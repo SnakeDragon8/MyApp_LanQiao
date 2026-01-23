@@ -21,8 +21,9 @@ typedef struct {
 } SysData_t;
 
 typedef struct {
-    uint32_t freq;
-    uint32_t duty;
+    uint32_t pa6_freq;
+    float pa15_freq;
+    uint32_t pa15_duty;
 } Measure_t;
 
 void App_Init(void);

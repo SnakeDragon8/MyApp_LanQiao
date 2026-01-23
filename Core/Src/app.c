@@ -121,10 +121,10 @@ void Task_Lcd() {
     
     LCD_Show(Line1, "Count: %-13d", SysData.count);
     LCD_Show(Line2, "abcdefghijklmnopqrst");
-    LCD_Show(Line3, "Duty: %d%%         ", SysData.duty);
-    LCD_Show(Line4, "Freq: %d Hz        ", SysData.freq);
-    LCD_Show(Line5, "MesDuty: %d%%      ", Measure.duty);
-    LCD_Show(Line6, "MesFreq: %d Hz     ", Measure.freq);
+    LCD_Show(Line3, "PA7Duty: %d%%      ", SysData.duty);
+    LCD_Show(Line4, "PA7Freq: %d Hz     ", SysData.freq);
+    LCD_Show(Line5, "PA6Freq: %d Hz     ", Measure.pa6_freq);
+    LCD_Show(Line6, "PA15Freq: %.1f Hz  ", Measure.pa15_freq);
 
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
@@ -157,8 +157,8 @@ void App_Init() {
     
     HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);
     
+    HAL_TIM_IC_Start_IT(&htim16, TIM_CHANNEL_1);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
-    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
     
     HAL_TIM_Base_Start_IT(&htim4);
     
@@ -208,6 +208,7 @@ void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t F
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
     // 定时器输入捕获回调函数
+    /*
     if(htim->Instance == TIM2) {
         if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
             uint32_t period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
@@ -216,6 +217,29 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
                 Measure.freq = 80000000 / period_cnt;
                 uint32_t low_duty = (pulse_cnt * 100) / period_cnt;
                 Measure.duty = 100 - low_duty;
+            }
+        }
+    }
+    */
+    
+    if(htim->Instance == TIM2) {
+        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+            uint32_t cap_val_pa15 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            __HAL_TIM_SET_COUNTER(htim, 0);
+            if(cap_val_pa15 != 0) {
+                Measure.pa15_freq = 1000000.0 / cap_val_pa15;
+            }
+        }
+    }
+    
+    if(htim->Instance == TIM16) {
+        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+            static uint16_t last_pa6 = 0;
+            uint16_t cur_pa6 = (uint16_t)HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            uint16_t pa6_val = cur_pa6 - last_pa6;
+            last_pa6 = cur_pa6;
+            if(pa6_val > 0) {
+                Measure.pa6_freq = 1000000 / pa6_val; // 1MHz
             }
         }
     }
