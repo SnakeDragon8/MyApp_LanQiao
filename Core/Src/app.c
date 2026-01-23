@@ -119,12 +119,12 @@ void Task_Lcd() {
     if(HAL_GetTick() - lcd_tick < 100) return;
     lcd_tick = HAL_GetTick();
     
-    LCD_Show(Line1, "Count: %-13d", SysData.count);
-    LCD_Show(Line2, "abcdefghijklmnopqrst");
-    LCD_Show(Line3, "PA7Duty: %d%%      ", SysData.duty);
-    LCD_Show(Line4, "PA7Freq: %d Hz     ", SysData.freq);
-    LCD_Show(Line5, "PA6Freq: %d Hz     ", Measure.pa6_freq);
-    LCD_Show(Line6, "PA15Freq: %.1f Hz  ", Measure.pa15_freq);
+    LCD_Show(Line0, "Count: %-13d", SysData.count);
+    LCD_Show(Line1, "PA7Duty: %d%%      ", SysData.duty);
+    LCD_Show(Line2, "PA7Freq: %dHz      ", SysData.freq);
+    LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
+    LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
+    LCD_Show(Line5, "PA15Duty: %.1f%%   ", Measure.pa15_duty);
 
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
@@ -159,6 +159,7 @@ void App_Init() {
     
     HAL_TIM_IC_Start_IT(&htim16, TIM_CHANNEL_1);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
     
     HAL_TIM_Base_Start_IT(&htim4);
     
@@ -208,26 +209,14 @@ void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t F
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
     // 定时器输入捕获回调函数
-    /*
-    if(htim->Instance == TIM2) {
-        if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) {
-            uint32_t period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
-            uint32_t pulse_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            if(period_cnt != 0) {
-                Measure.freq = 80000000 / period_cnt;
-                uint32_t low_duty = (pulse_cnt * 100) / period_cnt;
-                Measure.duty = 100 - low_duty;
-            }
-        }
-    }
-    */
     
     if(htim->Instance == TIM2) {
         if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
-            uint32_t cap_val_pa15 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            __HAL_TIM_SET_COUNTER(htim, 0);
-            if(cap_val_pa15 != 0) {
-                Measure.pa15_freq = 1000000.0 / cap_val_pa15;
+            uint32_t pa15_period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            uint32_t pa15_high_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+            if(pa15_period_cnt != 0) {
+                Measure.pa15_freq = 1000000.0 / pa15_period_cnt;
+                Measure.pa15_duty = ((float)pa15_high_cnt / pa15_period_cnt) * 100.0f;
             }
         }
     }
