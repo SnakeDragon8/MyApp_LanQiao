@@ -4,6 +4,7 @@
 #include "main.h"
 
 #define RX_BUF_SIZE 100
+#define FILTER_N 8
 
 typedef enum {
     DISP_DATA = 0,

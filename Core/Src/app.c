@@ -34,6 +34,7 @@ void Key_B4(void);
 
 void LCD_Show(uint8_t Line, char *fmt, ...);
 void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent);
+uint32_t Filter(uint32_t new_value);
 
 void Task_Key() {
     Key_B1();
@@ -205,21 +206,56 @@ void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t F
     __HAL_TIM_SetCompare(htim, Channel, crr);
 }
 
+
+/* * 通用滑动窗口平均滤波器
+ * 输入：新采集的原始数据 (Raw Data)
+ * 返回：平滑后的数据
+ */
+uint32_t Filter(uint32_t new_value)
+{
+    static uint32_t buf[FILTER_N] = {0};
+    static uint32_t sum = 0;
+    static uint8_t idx = 0;
+
+    // 1. 启动时的快速填充（可选，防止刚上电是0）
+    if (sum == 0 && buf[0] == 0) {
+        for(int i=0; i<FILTER_N; i++) {
+            buf[i] = new_value;
+            sum += new_value;
+        }
+    }
+    else {
+        // 2. 减去最老，加上最新
+        sum = sum - buf[idx] + new_value;
+        buf[idx] = new_value;
+    }
+
+    // 3. 索引移动
+    idx++;
+    if (idx >= FILTER_N) idx = 0;
+
+    // 4. 返回平均值
+    return sum / FILTER_N;
+}
+
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
     // 定时器输入捕获回调函数
     
     if(htim->Instance == TIM2) {
         if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
-            uint32_t pa15_period_cnt = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            __HAL_TIM_SET_COUNTER(htim, 0);
-            if(pa15_period_cnt != 0) {
-                Measure.pa15_freq = 1000000.0 / pa15_period_cnt;
+            // 硬件清零
+            uint32_t pa15_val = (uint32_t)HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            if(pa15_val != 0) {
+                // 如果测量结果不稳定, 加滤波
+                // pa15_val = Filter(pa15_val);
+                Measure.pa15_freq = 1000000.0 / pa15_val;
             }
         }
     }
     
     if(htim->Instance == TIM16) {
         if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+            // TIM16没有从模式:复位模式(硬件清零), 选用作差法
             static uint16_t last_pa6 = 0;
             uint16_t cur_pa6 = (uint16_t)HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
             uint16_t pa6_val = cur_pa6 - last_pa6;
