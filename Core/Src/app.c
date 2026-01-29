@@ -153,16 +153,17 @@ void Task_Adc() {
     
     Measure.r37 = Get_ADC_Vol(&hadc2);
     
-    Measure.r38[0] = (adc1_dma_buf[0] * 3.3) / 4095.0;
-    Measure.r38[2] = (1.212 * 4095.0) / adc1_dma_buf[2];
+    Measure.r38[0] = (adc1_dma_buf[0] * 3.3) / 4095.0;      // 电压
+    Measure.r38[2] = (1.212 * 4095.0) / adc1_dma_buf[2];    // 电源电压Vdda
     #define TS_CAL1_ADDR ((uint16_t*) ((uint32_t)0x1FFF75A8)) // 30°C 校准值地址
-    #define TS_CAL2_ADDR ((uint16_t*) ((uint32_t)0x1FFF75CA)) // 130°C 校准值地址
+    #define TS_CAL2_ADDR ((uint16_t*) ((uint32_t)0x1FFF75CA)) // 110°C 校准值地址
     uint16_t ts_cal1 = *TS_CAL1_ADDR;
     uint16_t ts_cal2 = *TS_CAL2_ADDR;
     double raw_temp_3v = (double)adc1_dma_buf[1] * Measure.r38[2] / 3.0;
     // 线性插值公式计算温度
     // Temp = 30 + (110 - 30) * (raw_temp - ts_cal1) / (ts_cal2 - ts_cal1)
-    Measure.r38[1] = 30.0f + (110.0f - 30.0f) * (raw_temp_3v - ts_cal1) / (ts_cal2 - ts_cal1);    
+    // 芯片温度
+    Measure.r38[1] = 30.0f + (110.0f - 30.0f) * (raw_temp_3v - ts_cal1) / (ts_cal2 - ts_cal1);
 }
 
 void App_Init() {
@@ -196,6 +197,7 @@ void App_Init() {
     HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
     HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1_dma_buf, 3);
+    HAL_TIM_Base_Start(&htim6);
     
     LCD_Show_Chinese(Line7, 320, White, Black);
 }
