@@ -24,6 +24,8 @@ typedef struct {
 typedef struct {
     uint32_t pa6_freq;
     float pa15_freq;
+    double vol_r37;
+    double vol_r38;
 } Measure_t;
 
 void App_Init(void);

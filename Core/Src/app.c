@@ -4,6 +4,7 @@
 #include "led.h"
 #include "tim.h"
 #include "usart.h"
+#include "adc.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +36,7 @@ void Key_B4(void);
 void LCD_Show(uint8_t Line, char *fmt, ...);
 void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent);
 uint32_t Filter(uint32_t new_value);
+double Get_ADC_Vol(ADC_HandleTypeDef *hadc);
 
 void Task_Key() {
     Key_B1();
@@ -125,6 +127,7 @@ void Task_Lcd() {
     LCD_Show(Line2, "PA7Freq: %dHz      ", SysData.freq);
     LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
     LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
+    LCD_Show(Line5, "R37:%.2fV R38:%.2fV", Measure.vol_r37, Measure.vol_r38);
 
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
@@ -137,6 +140,14 @@ void Task_Uart() {
         memset(rx_buf, 0, RX_BUF_SIZE);
         process_flag = 0;
     }
+}
+
+void Task_Adc() {
+    static uint32_t adc_tick = 0;
+    if(HAL_GetTick() - adc_tick < 200) return;
+    Measure.vol_r37 = Get_ADC_Vol(&hadc2);
+    Measure.vol_r38 = Get_ADC_Vol(&hadc1);
+    adc_tick = HAL_GetTick();
 }
 
 void App_Init() {
@@ -167,6 +178,10 @@ void App_Init() {
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, rx_buf, RX_BUF_SIZE);
     __HAL_DMA_DISABLE_IT(huart1.hdmarx, DMA_IT_HT);
     
+    HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+    HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
+    
+    
     LCD_Show_Chinese(Line7, 320, White, Black);
 }
 
@@ -175,6 +190,7 @@ void App_Loop() {
     Task_Lcd();
     Task_Pwm();
     Task_Uart();
+    Task_Adc();
 }
 
 // 重定向printf
@@ -236,6 +252,15 @@ uint32_t Filter(uint32_t new_value)
 
     // 4. 返回平均值
     return sum / FILTER_N;
+}
+
+double Get_ADC_Vol(ADC_HandleTypeDef *hadc) {
+    uint16_t adc_val = 0;
+    HAL_ADC_Start(hadc);
+    if(HAL_OK == HAL_ADC_PollForConversion(hadc, 10)) {
+        adc_val = HAL_ADC_GetValue(hadc);
+    }
+    return (adc_val * 3.3) / 4095.0;
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
