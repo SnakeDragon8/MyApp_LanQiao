@@ -16,6 +16,8 @@ SysData_t SysData;
 DispState_t DispState;
 volatile Measure_t Measure;
 
+volatile uint16_t adc1_dma_buf[3];
+
 uint8_t rx_buf[RX_BUF_SIZE];
 char process_buf[RX_BUF_SIZE];
 uint8_t process_flag = 0;
@@ -127,7 +129,9 @@ void Task_Lcd() {
     LCD_Show(Line2, "PA7Freq: %dHz      ", SysData.freq);
     LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
     LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
-    LCD_Show(Line5, "R37:%.2fV R38:%.2fV", Measure.vol_r37, Measure.vol_r38);
+    LCD_Show(Line5, "R37:%.2fV", Measure.r37);
+    LCD_Show(Line6, "R38:%.2fV Vdda:%.2fV", Measure.r38[0], Measure.r38[2]);
+    LCD_Show(Line7, "Temp:%.1fC ", Measure.r38[1]);
 
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
 }
@@ -145,9 +149,20 @@ void Task_Uart() {
 void Task_Adc() {
     static uint32_t adc_tick = 0;
     if(HAL_GetTick() - adc_tick < 200) return;
-    Measure.vol_r37 = Get_ADC_Vol(&hadc2);
-    Measure.vol_r38 = Get_ADC_Vol(&hadc1);
     adc_tick = HAL_GetTick();
+    
+    Measure.r37 = Get_ADC_Vol(&hadc2);
+    
+    Measure.r38[0] = (adc1_dma_buf[0] * 3.3) / 4095.0;
+    Measure.r38[2] = (1.212 * 4095.0) / adc1_dma_buf[2];
+    #define TS_CAL1_ADDR ((uint16_t*) ((uint32_t)0x1FFF75A8)) // 30°C 校准值地址
+    #define TS_CAL2_ADDR ((uint16_t*) ((uint32_t)0x1FFF75CA)) // 130°C 校准值地址
+    uint16_t ts_cal1 = *TS_CAL1_ADDR;
+    uint16_t ts_cal2 = *TS_CAL2_ADDR;
+    double raw_temp_3v = (double)adc1_dma_buf[1] * Measure.r38[2] / 3.0;
+    // 线性插值公式计算温度
+    // Temp = 30 + (110 - 30) * (raw_temp - ts_cal1) / (ts_cal2 - ts_cal1)
+    Measure.r38[1] = 30.0f + (110.0f - 30.0f) * (raw_temp_3v - ts_cal1) / (ts_cal2 - ts_cal1);    
 }
 
 void App_Init() {
@@ -180,7 +195,7 @@ void App_Init() {
     
     HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
     HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
-    
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1_dma_buf, 3);
     
     LCD_Show_Chinese(Line7, 320, White, Black);
 }
