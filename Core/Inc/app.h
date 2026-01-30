@@ -16,6 +16,7 @@ typedef struct {
     uint32_t count;
     uint32_t freq;
     uint32_t duty;
+    uint8_t is_alarm;
     
     char hint_msg[21];
     uint32_t hint_time;
