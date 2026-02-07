@@ -17,10 +17,12 @@ typedef struct {
     uint32_t freq;
     uint32_t duty;
     uint8_t is_alarm;
-    
+} SysData_t;
+
+typedef struct {
     char hint_msg[21];
     uint32_t hint_time;
-} SysData_t;
+} Msg_t;
 
 typedef struct {
     uint32_t pa6_freq;

@@ -5,6 +5,8 @@
 #include "tim.h"
 #include "usart.h"
 #include "adc.h"
+#include "i2c_hal.h"
+#include "eeprom.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +15,8 @@
 #include "chinese.h"
 
 SysData_t SysData;
+SysData_t SysData_Shadow; // 专门给 EEPROM 用的快照
+Msg_t Msg;
 DispState_t DispState;
 volatile Measure_t Measure;
 
@@ -25,10 +29,14 @@ uint8_t process_flag = 0;
 static char LCD_Cache[10][21];
 volatile static uint8_t run_led = 0x01;
 
+uint8_t SaveReqFlag = 0;
+static uint16_t eeprom_idx = 0;
+
 void Task_Key(void);
 void Task_Lcd(void);
 void Task_Pwm(void);
 void Task_Uart(void);
+void Task_Eeprom(void);
 
 void Key_B1(void);
 void Key_B2(void);
@@ -39,6 +47,7 @@ void LCD_Show(uint8_t Line, char *fmt, ...);
 void PWM_Set_Freq_And_Duty(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t Freq_Hz, uint16_t Duty_Percent);
 uint32_t Filter(uint32_t new_value);
 double Get_ADC_Vol(ADC_HandleTypeDef *hadc);
+void Request_Save(void);
 
 void Task_Key() {
     Key_B1();
@@ -52,9 +61,9 @@ void Key_B1() {
         KeyState[0].DOWN = 0;
         SysData.duty += 10;
     }
-    if(KeyState[0].REPEAT) {
-        KeyState[0].REPEAT = 0;
-        SysData.duty += 1;
+    if(KeyState[0].LONG) {
+        KeyState[0].LONG = 0;
+        Request_Save();
     }
 }
 
@@ -72,18 +81,18 @@ void Key_B2() {
 void Key_B3() {
     if(KeyState[2].SINGLE) {
         KeyState[2].SINGLE = 0;
-        sprintf(SysData.hint_msg, "B3:SINGLE    ");
-        SysData.hint_time = HAL_GetTick();
+        sprintf(Msg.hint_msg, "B3:SINGLE    ");
+        Msg.hint_time = HAL_GetTick();
     }
     if(KeyState[2].DOUBLE) {
         KeyState[2].DOUBLE = 0;
-        sprintf(SysData.hint_msg, "B3:DOUBLE    ");
-        SysData.hint_time = HAL_GetTick();
+        sprintf(Msg.hint_msg, "B3:DOUBLE    ");
+        Msg.hint_time = HAL_GetTick();
     }
     if(KeyState[2].LONG) {
         KeyState[2].LONG = 0;
-        sprintf(SysData.hint_msg, "B3:LONG    ");
-        SysData.hint_time = HAL_GetTick();
+        sprintf(Msg.hint_msg, "B3:LONG    ");
+        Msg.hint_time = HAL_GetTick();
     }
 }
 
@@ -91,8 +100,8 @@ void Key_B4() {
     if(KeyState[3].LONG) {
         KeyState[3].LONG = 0;
         SysData.count = 0;
-        sprintf(SysData.hint_msg, "Count Reset! ");
-        SysData.hint_time = HAL_GetTick();
+        sprintf(Msg.hint_msg, "Count Reset! ");
+        Msg.hint_time = HAL_GetTick();
     }
     if(KeyState[3].SINGLE) {
         KeyState[3].SINGLE = 0;
@@ -114,9 +123,9 @@ void Task_Pwm() {
 }
 
 void Task_Lcd() {
-    if(SysData.hint_msg[0] != '\0') {
-        if(HAL_GetTick() - SysData.hint_time > 1000) {
-            SysData.hint_msg[0] = '\0';
+    if(Msg.hint_msg[0] != '\0') {
+        if(HAL_GetTick() - Msg.hint_time > 1000) {
+            Msg.hint_msg[0] = '\0';
         }
     }
     
@@ -134,14 +143,14 @@ void Task_Lcd() {
     LCD_Show(Line7, "Temp:%.1fC  ", Measure.r38[1]);
     LCD_Show(Line8, "IsAlarm:%d  ", SysData.is_alarm);
 
-    LCD_Show(Line9, "%-20s", SysData.hint_msg);
+    LCD_Show(Line9, "%-20s", Msg.hint_msg);
 }
 
 void Task_Uart() {
     if(process_flag == 1) {
-        strncpy(SysData.hint_msg, process_buf, sizeof(SysData.hint_msg) - 1);
-        SysData.hint_msg[sizeof(SysData.hint_msg) - 1] = '\0';
-        SysData.hint_time = HAL_GetTick();
+        strncpy(Msg.hint_msg, process_buf, sizeof(Msg.hint_msg) - 1);
+        Msg.hint_msg[sizeof(Msg.hint_msg) - 1] = '\0';
+        Msg.hint_time = HAL_GetTick();
         memset(rx_buf, 0, RX_BUF_SIZE);
         process_flag = 0;
     }
@@ -175,6 +184,29 @@ void Task_Adc() {
     }
 }
 
+void Task_Eeprom() {
+    if(SaveReqFlag == 0) return;
+    if(EEPROM_IsReady() == 0) return;
+
+    uint8_t *pData = (uint8_t *)&SysData_Shadow;
+    uint8_t val = pData[eeprom_idx];
+    uint8_t addr = 0x01 + eeprom_idx;
+    uint8_t old_val = EEPROM_Read(addr);
+    if(old_val != val) {
+        EEPROM_Write(addr, val);
+    }
+    
+    eeprom_idx++;
+    
+    if(eeprom_idx >= sizeof(SysData)) {
+        eeprom_idx = 0;
+        SaveReqFlag = 0;
+        
+        sprintf(Msg.hint_msg, "Save Done!");
+        Msg.hint_time = HAL_GetTick();
+    }
+}
+
 void App_Init() {
     HAL_Delay(50);
     LED_Disp(0x00);
@@ -185,11 +217,18 @@ void App_Init() {
     LCD_SetBackColor(Black);
     LCD_SetTextColor(White);
     
-    memset(&SysData, 0, sizeof(SysData));
     memset(&DispState, 0, sizeof(DispState));
+    I2CInit();
+    if(EEPROM_Read(0x00) != 0xA5) {
+        memset(&SysData, 0, sizeof(SysData));
     
-    SysData.duty = 50;
-    SysData.freq = 1000;
+        SysData.duty = 50;
+        SysData.freq = 1000;
+        EEPROM_Write_Buffer(0x01, &SysData, sizeof(SysData));
+        EEPROM_Write_Delay(0x00, 0xA5);
+    } else {
+        EEPROM_Read_Buffer(0x01, &SysData, sizeof(SysData));
+    }
     
     HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);
     
@@ -216,6 +255,7 @@ void App_Loop() {
     Task_Pwm();
     Task_Uart();
     Task_Adc();
+    Task_Eeprom();
 }
 
 // 重定向printf
@@ -286,6 +326,14 @@ double Get_ADC_Vol(ADC_HandleTypeDef *hadc) {
         adc_val = HAL_ADC_GetValue(hadc);
     }
     return (adc_val * 3.3) / 4095.0;
+}
+
+void Request_Save(void) {
+    if(SaveReqFlag == 0) {
+        SysData_Shadow = SysData;
+        eeprom_idx = 0;
+        SaveReqFlag = 1;
+    }
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
