@@ -17,7 +17,6 @@ DispState_t DispState;
 volatile Measure_t Measure;
 
 volatile uint16_t adc1_dma_buf[3];
-volatile uint32_t debug_alarm_val = 0;
 
 uint8_t rx_buf[RX_BUF_SIZE];
 char process_buf[RX_BUF_SIZE];
@@ -126,30 +125,16 @@ void Task_Lcd() {
     lcd_tick = HAL_GetTick();
     
     LCD_Show(Line0, "Count: %-13d", SysData.count);
-   // LCD_Show(Line1, "PA7Duty: %d%%      ", SysData.duty);
-    LCD_Show(Line1, "%d     ", adc1_dma_buf[0]);
-   // LCD_Show(Line2, "PA7Freq: %dHz      ", SysData.freq);
-    LCD_Show(Line2, "TrapVal: %d    ", debug_alarm_val);
-    //LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
-    //LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
-    //LCD_Show(Line5, "R37:%.2fV", Measure.r37);
+    LCD_Show(Line1, "PA7Duty: %d%%      ", SysData.duty);
+    LCD_Show(Line2, "PA7Freq: %dHz      ", SysData.freq);
+    LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
+    LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
+    LCD_Show(Line5, "R37:%.2fV", Measure.r37);
     LCD_Show(Line6, "R38:%.2fV Vdda:%.2fV", Measure.r38[0], Measure.r38[2]);
     LCD_Show(Line7, "Temp:%.1fC  ", Measure.r38[1]);
     LCD_Show(Line8, "IsAlarm:%d  ", SysData.is_alarm);
 
     LCD_Show(Line9, "%-20s", SysData.hint_msg);
-    
-    uint32_t reg_tr1 = ADC1->TR1;
-    uint32_t reg_cfgr = ADC1->CFGR;
-    
-    // G4系列 TR1 高16位是HT(上限)，低16位是LT(下限)
-    uint16_t real_high = (reg_tr1 >> 16) & 0xFFFF;
-    uint16_t real_low = reg_tr1 & 0xFFFF;
-    
-    LCD_Show(Line3, "HT:%d LT:%d", real_high, real_low);
-    LCD_Show(Line4, "CFGR:%08X", reg_cfgr);
-    // 在 Task_Lcd 中添加一行
-    LCD_Show(Line5, "CFGR2:%08X", ADC1->CFGR2);
 }
 
 void Task_Uart() {
@@ -170,18 +155,24 @@ void Task_Adc() {
     Measure.r37 = Get_ADC_Vol(&hadc2);
     
     Measure.r38[0] = (adc1_dma_buf[0] / 16.0 * 3.3) / 4095.0;      // 电压
-    Measure.r38[2] = (1.212 * 4095.0) / adc1_dma_buf[2];    // 电源电压Vdda
+    Measure.r38[2] = (1.212 * 4095.0) / adc1_dma_buf[2] * 16.0;    // 电源电压Vdda
     #define TS_CAL1_ADDR ((uint16_t*) ((uint32_t)0x1FFF75A8)) // 30°C 校准值地址
     #define TS_CAL2_ADDR ((uint16_t*) ((uint32_t)0x1FFF75CA)) // 110°C 校准值地址
     uint16_t ts_cal1 = *TS_CAL1_ADDR;
     uint16_t ts_cal2 = *TS_CAL2_ADDR;
-    double raw_temp_3v = (double)adc1_dma_buf[1] * Measure.r38[2] / 3.0;
+    
+    uint16_t filtedTemp = (uint16_t)Filter((uint32_t)adc1_dma_buf[1]);
+    double raw_temp_3v = (double)filtedTemp / 16.0 * Measure.r38[2] / 3.0;
     // 线性插值公式计算温度
     // Temp = 30 + (110 - 30) * (raw_temp - ts_cal1) / (ts_cal2 - ts_cal1)
     // 芯片温度
     Measure.r38[1] = 30.0f + (110.0f - 30.0f) * (raw_temp_3v - ts_cal1) / (ts_cal2 - ts_cal1);
     
-    SysData.is_alarm = 0;
+    if(Measure.r38[0] >= 0.5f && Measure.r38[0] <= 3.0f) {
+        SysData.is_alarm = 0; // 只有正常时才复位
+    } else {
+        SysData.is_alarm = 1; // 越界时强制置位 (双重保险，配合看门狗中断)
+    }
 }
 
 void App_Init() {
@@ -214,9 +205,6 @@ void App_Init() {
     HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc1_dma_buf, 3);
     HAL_TIM_Base_Start(&htim6);
-    //HAL_Delay(100);
-    //__HAL_ADC_CLEAR_FLAG(&hadc1, ADC_FLAG_AWD1);
-    __HAL_ADC_ENABLE_IT(&hadc1, ADC_IT_AWD1);
     
     printf("Hello World\r\n");
     LCD_Show_Chinese(Line7, 320, White, Black);
@@ -353,7 +341,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 void HAL_ADC_LevelOutOfWindowCallback(ADC_HandleTypeDef *hadc) {
     if (hadc->Instance == ADC1) {
         SysData.is_alarm = 1;
-        debug_alarm_val = HAL_ADC_GetValue(hadc);
     }
 }
 

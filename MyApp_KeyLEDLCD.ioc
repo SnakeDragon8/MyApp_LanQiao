@@ -1,7 +1,7 @@
 #MicroXplorer Configuration settings - do not modify
 ADC1.AWD1FilteringConfig=ADC_AWD_FILTERING_NONE
 ADC1.AWD1HighThreshold=3722
-ADC1.AWD1ITMode=DISABLE
+ADC1.AWD1ITMode=ENABLE
 ADC1.AWD1LowThreshold=620
 ADC1.Channel-0\#ChannelRegularConversion=ADC_CHANNEL_11
 ADC1.Channel-1\#ChannelRegularConversion=ADC_CHANNEL_TEMPSENSOR_ADC1
