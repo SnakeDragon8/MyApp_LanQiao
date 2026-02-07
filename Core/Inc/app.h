@@ -17,6 +17,7 @@ typedef struct {
     uint32_t freq;
     uint32_t duty;
     uint8_t is_alarm;
+    uint32_t boot_count;
 } SysData_t;
 
 typedef struct {

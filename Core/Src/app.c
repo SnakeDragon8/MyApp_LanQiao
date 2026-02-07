@@ -7,6 +7,7 @@
 #include "adc.h"
 #include "i2c_hal.h"
 #include "eeprom.h"
+#include "rtc.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -32,11 +33,15 @@ volatile static uint8_t run_led = 0x01;
 uint8_t SaveReqFlag = 0;
 static uint16_t eeprom_idx = 0;
 
+RTC_TimeTypeDef sTime = {0};
+RTC_DateTypeDef sDate = {0};
+
 void Task_Key(void);
 void Task_Lcd(void);
 void Task_Pwm(void);
 void Task_Uart(void);
 void Task_Eeprom(void);
+void Task_RTC(void);
 
 void Key_B1(void);
 void Key_B2(void);
@@ -57,8 +62,8 @@ void Task_Key() {
 }
 
 void Key_B1() {
-    if(KeyState[0].DOWN) {
-        KeyState[0].DOWN = 0;
+    if(KeyState[0].SINGLE) {
+        KeyState[0].SINGLE = 0;
         SysData.duty += 10;
     }
     if(KeyState[0].LONG) {
@@ -139,9 +144,11 @@ void Task_Lcd() {
     LCD_Show(Line3, "PA6Freq: %dHz      ", Measure.pa6_freq);
     LCD_Show(Line4, "PA15Freq: %.1fHz   ", Measure.pa15_freq);
     LCD_Show(Line5, "R37:%.2fV", Measure.r37);
-    LCD_Show(Line6, "R38:%.2fV Vdda:%.2fV", Measure.r38[0], Measure.r38[2]);
-    LCD_Show(Line7, "Temp:%.1fC  ", Measure.r38[1]);
-    LCD_Show(Line8, "IsAlarm:%d  ", SysData.is_alarm);
+    //LCD_Show(Line6, "R38:%.2fV Vdda:%.2fV", Measure.r38[0], Measure.r38[2]);
+    //LCD_Show(Line7, "Temp:%.1fC  ", Measure.r38[1]);
+    LCD_Show(Line6, "Time:%02d:%02d:%02d", sTime.Hours, sTime.Minutes, sTime.Seconds);
+    LCD_Show(Line7, "Date:20%02d-%02d-%02d", sDate.Year, sDate.Month, sDate.Date);
+    LCD_Show(Line8, "IsAlarm:%d Boot:%d", SysData.is_alarm, SysData.boot_count);
 
     LCD_Show(Line9, "%-20s", Msg.hint_msg);
 }
@@ -207,6 +214,15 @@ void Task_Eeprom() {
     }
 }
 
+void Task_RTC() {
+    static uint32_t rtc_tick = 0;
+    if(HAL_GetTick() - rtc_tick < 500) return;
+    rtc_tick = HAL_GetTick();
+    
+    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+}
+
 void App_Init() {
     HAL_Delay(50);
     LED_Disp(0x00);
@@ -221,13 +237,15 @@ void App_Init() {
     I2CInit();
     if(EEPROM_Read(0x00) != 0xA5) {
         memset(&SysData, 0, sizeof(SysData));
-    
         SysData.duty = 50;
         SysData.freq = 1000;
+        SysData.boot_count = 1;
         EEPROM_Write_Buffer(0x01, &SysData, sizeof(SysData));
         EEPROM_Write_Delay(0x00, 0xA5);
     } else {
         EEPROM_Read_Buffer(0x01, &SysData, sizeof(SysData));
+        SysData.boot_count++;
+        EEPROM_Write_Buffer(0x01, &SysData, sizeof(SysData));
     }
     
     HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);
@@ -256,6 +274,7 @@ void App_Loop() {
     Task_Uart();
     Task_Adc();
     Task_Eeprom();
+    Task_RTC();
 }
 
 // 重定向printf
