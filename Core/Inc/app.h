@@ -4,16 +4,14 @@
 #include "main.h"
 
 #define RX_BUF_SIZE 100
-#define FILTER_N 8
 
 typedef enum {
-    DISP_DATA = 0,
-    DISP_PARA,
-    DISP_NUM
-} DispState_t;
+    SYSD = 0,
+    MEAS,
+    CTRL
+} State_t;
 
 typedef struct {
-    uint32_t count;
     uint32_t freq;
     uint32_t duty;
     uint8_t is_alarm;
@@ -34,5 +32,11 @@ typedef struct {
 
 void App_Init(void);
 void App_Loop(void);
+
+extern SysData_t SysData;
+extern volatile Measure_t Measure;
+extern volatile uint8_t run_led;
+extern uint8_t rx_buf[RX_BUF_SIZE];
+extern uint8_t rx_flag;
 
 #endif

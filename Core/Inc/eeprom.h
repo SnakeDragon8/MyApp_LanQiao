@@ -11,5 +11,4 @@ void EEPROM_Write_Delay(uint8_t addr, uint8_t dat);
 void EEPROM_Write_Buffer(uint8_t addr, void *pBuffer, uint8_t len);
 void EEPROM_Read_Buffer(uint8_t addr, void *pBuffer, uint8_t len);
 
-
 #endif
